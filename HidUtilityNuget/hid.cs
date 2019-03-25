@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -9,6 +9,7 @@ using System.Threading;
 using System.Management;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using KtCore.Source.Logs;
 
 namespace HidUtilityNuget
 {
@@ -74,8 +75,8 @@ namespace HidUtilityNuget
         public ushort Pid { get; private set; }
         public string DeviceID { get; private set; }
         public string ClassGuid { get; private set; }
-        public string Caption { get; private set; }
         public string Manufacturer { get; private set; }
+        public Dictionary<string, string> Properties { get; private set; }
 
         public Device()
         {
@@ -83,8 +84,8 @@ namespace HidUtilityNuget
             this.Pid = 0x0000;
             this.DeviceID = "";
             this.ClassGuid = "";
-            this.Caption = "";
             this.Manufacturer = "";
+            this.Properties = new Dictionary<string, string>();
         }
 
         public Device(ushort Vid, ushort Pid)
@@ -93,33 +94,49 @@ namespace HidUtilityNuget
             this.Pid = Pid;
             this.DeviceID = "";
             this.ClassGuid = "";
-            this.Caption = "";
             this.Manufacturer = "";
         }
 
-        public Device(ManagementObject wmi_obj)
+        public static Device Create(ManagementObject wmi_obj)
         {
-            this.DeviceID = wmi_obj["DeviceID"].ToString().ToUpper();
-            this.ClassGuid = wmi_obj["ClassGuid"].ToString();
-            this.Caption = wmi_obj["Caption"].ToString();
-            this.Manufacturer = wmi_obj["Manufacturer"].ToString();
-            Match match = Regex.Match(this.DeviceID, "PID_(.{4})", RegexOptions.IgnoreCase);
-            if (match.Success)
+            Device device = null;
+            if (wmi_obj != null)
             {
-                string pid_string = match.Groups[1].Value;
-                Pid = ushort.Parse(pid_string, System.Globalization.NumberStyles.HexNumber);
+                device = new Device();
+                foreach (var arg in wmi_obj.Properties)
+                {
+                    if(arg.Name == "DeviceID" && arg.Value != null)
+                        device.DeviceID= wmi_obj["DeviceID"].ToString().ToUpper();
+                    else if (arg.Name == "ClassGuid" && arg.Value != null)
+                        device.ClassGuid = wmi_obj["ClassGuid"].ToString().ToUpper();
+                    else if (arg.Name == "Manufacturer" && arg.Value != null)
+                        device.Manufacturer = wmi_obj["Manufacturer"].ToString().ToUpper();
+
+                    if (arg.Value == null)
+                        device.Properties.Add(arg.Name, "");
+                    else
+                        device.Properties.Add(arg.Name, arg.Value.ToString());
+                }
+
+                Match match = Regex.Match(device.DeviceID, "PID_(.{4})", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    string pid_string = match.Groups[1].Value;
+                    device.Pid = ushort.Parse(pid_string, System.Globalization.NumberStyles.HexNumber);
+                }
+                match = Regex.Match(device.DeviceID, "VID_(.{4})", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    string vid_string = match.Groups[1].Value;
+                    device.Vid = ushort.Parse(vid_string, System.Globalization.NumberStyles.HexNumber);
+                }
             }
-            match = Regex.Match(this.DeviceID, "VID_(.{4})", RegexOptions.IgnoreCase);
-            if (match.Success)
-            {
-                string vid_string = match.Groups[1].Value;
-                Vid = ushort.Parse(vid_string, System.Globalization.NumberStyles.HexNumber);
-            }
+            return device;
         }
 
         public override string ToString()
         {
-            return string.Format("{0} (VID=0x{1:X4} PID=0x{2:X4})", Caption, Vid, Pid);
+            return string.Format("VID=0x{0:X4} PID=0x{1:X4}", Vid, Pid);
         }
     }
 
@@ -557,9 +574,9 @@ namespace HidUtilityNuget
                 string deviceId = wmi_HD["DeviceID"].ToString();
                 if (deviceIDs.Contains(deviceId))
                 {
-                    string caption = wmi_HD["Caption"].ToString();
-                    Device dev = new Device(wmi_HD);
-                    devices.Add(dev);
+                    Device dev = Device.Create(wmi_HD);
+                    if(dev != null)
+                        devices.Add(dev);
                 }
             }
             return devices;
